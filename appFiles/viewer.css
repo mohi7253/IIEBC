@@ -1,0 +1,119 @@
+html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0; 
+    padding: 0;
+}
+#header {
+	background-color:#2F6F00;
+}
+#title {
+	font-family: Arial;
+	font-size:28px;
+	color:#ffffff;
+	font-weight:bold;
+	position:absolute;
+	top:10px;
+	left:30px;
+}
+#selectedMap {
+	font-family:Cambria; 
+	font-size:22px; 
+	color:#e3ecf1;
+}
+#footer {
+	background-color:#2F6F00;
+}
+#infowindowTitle {
+	font-size:14px;
+	font-weight:bolder;
+}
+.infowindow .window .top .right .user .titlebar .title {
+color:#000000;
+}
+.infowindow .window .top .right .user .content {
+color:#000000;
+}
+.infowindow .sprite
+{
+background-image: url(graphics/infowindow_white.png) !important;
+_background-image: none !important;
+_filter: progid:DXImageTransform.Microsoft.AlphaImageLoader(enabled='true', src='graphics/infowindow_white.png') !important;
+}
+#inputBG {
+    float: left;
+	height: 28px;
+	width: 250px;
+    margin: 7px 6px 0 0px;
+	background-repeat:no-repeat;
+	background-image:url(graphics/inputBG.gif);
+}
+#findField {
+	position:absolute;
+    left:auto;	
+	font-size: 16px;
+	color: #666;
+	width: 227px;
+    margin: 3px 0 0 4px;
+	border:none;
+	background: none;
+	text-align:left;
+}
+#searchButton {
+	height: 30px;
+	width: 117px;
+	font-weight:bold;
+	text-decoration:none;
+	font-size:larger;
+        text-align:center;
+	color:#FFFFFF;
+	background-repeat: no-repeat;
+	background-image:url(graphics/searchOver.gif);
+	float:left;
+	border: none;
+        margin: 7px 6px 0 0;
+        padding-top: 5px;
+}
+#searchButton2 {
+	height: 30px;
+	width: 185px;
+	font-weight:bold;
+	text-decoration:none;
+	font-size:larger;
+        text-align:center;
+	color:#FFFFFF;
+	background-repeat: no-repeat;
+	background-image:url(images/search.gif);
+	float:left;
+	border: none;
+        margin: 12px 0 0 0;
+        padding-top: 5px;
+}
+
+#searchButton:hover {
+	height: 30px;
+	width: 117px;
+	font-weight:bold;
+	text-decoration:none;
+	font-size:larger;
+    text-align:center;
+	color:#FFFFFF;
+	background-repeat: no-repeat;
+	background-image:url(graphics/searchOver.gif);
+	float:left;
+	border: none;
+    margin: 7px 6px 0 0;
+    padding-top: 4px;
+}
+#findBoxToggle a {
+	color: #CCC;
+}
+#findBoxToggle a:hover {
+	color: #fff;
+}
+#splashScreen a {
+	color: #CCC;
+}
+#splashScreen a:hover {
+	color: #fff;
+}

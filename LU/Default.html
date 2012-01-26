@@ -1,0 +1,639 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <title>Public Comments</title>
+    <link rel="Stylesheet" type="text/css" href="LocalGovernment.css" />
+    <link rel="Stylesheet" type="text/css" href="PublicComments.css" />
+    <style type="text/css">
+        @import "http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dijit/themes/claro/claro.css";
+    </style>
+    <script type="text/javascript">
+        var djConfig = {
+            parseOnLoad: true
+        }
+    </script>
+    <script type="text/javascript" src="http://serverapi.arcgisonline.com/jsapi/arcgis/?v=2.5"
+        djconfig="parseOnLoad:true"></script>
+
+    <script type="text/javascript" src="JS/Utils.js"></script>
+    <script type="text/javascript" src="JS/Locator.js"></script>
+    <script type="text/javascript" src="JS/BaseMapGallery.js"></script>
+    <script type="text/javascript">
+        
+        dojo.require("esri.map");
+        dojo.require("esri.tasks.geometry");
+        dojo.require("dijit.layout.ContentPane");
+        dojo.require("dijit.layout.BorderContainer");
+        dojo.require("esri.layers.FeatureLayer");
+        dojo.require("esri.tasks.query");
+        dojo.require("dijit.form.Button");
+        dojo.require("dijit.layout.TabContainer");
+        dojo.require("dijit.form.Textarea");
+        dojo.require("dojo.data.ItemFileReadStore");
+        dojo.require("dojox.fx");
+        dojo.require("dojo.fx.easing");
+        dojo.require("dijit.TooltipDialog");
+        dojo.require("dijit.form.TextBox");
+        dojo.require("dijit.Dialog");
+        dojo.require("dojox.widget.Standby");
+        dojo.require("dijit.form.RadioButton");
+        dojo.require("dijit.form.ToggleButton");
+
+        var map;    //ESRI map object
+        var streetMapServiceLayerid = 'streetMapServiceLayer';
+        var imageryMapServiceLayerid = 'imageryMapServiceLayer';
+        var locatorURL;     //variable for storing locator URL
+        var tempGraphicLayer = 'tempGraphicLayer';  //Temp Graphics layer ID
+        var defaultAddress;     //variable for storing default address
+        var helpFileURL;    //Variable for storing Help URL
+        var devPlanLayerURL;    //Variable for storing Feature layer URL
+        var commentLayerURL;    //Variable for storing Comment layer URL
+        var commentLayerID = 'commentLayerID';  //Temp Comments layer ID
+        var devPlanLayerID = 'devPlanLayerID';  //Temp Feature layer ID
+        var devObjectId;    //Temp variable for storing feature object ID
+        var defaultCmnt;    //Variable for storing default Comment to display in comments tab
+        var caseId;     //Temp variable for storing Feature layer Case ID
+        var baseMapLayerCollection;     //Variable for storing base map layers 
+        var hasCustomRenderer;      //Boolean for checking Feature layer renderer
+        var rendererColor;      //Variable for storing feature layer renderer color
+        var geometryService;    //Geometry used for Geocoding
+        var tinyURLServiceURL;    //variable to store tinyurl
+        var infoPopupFieldsCollection; //variable to store infowindow field
+        var infoWindowTitle; //variable to store infowindow title
+
+        //Function to initialize the map and read data from Configuration file
+        function init() {
+            dojo.connect(window, "onresize", function () {
+                PositionAddressList();
+                if (map) {
+                    map.resize();
+                    map.reposition();
+                }
+            });
+            ShowLoadingMessage('Loading...');
+            //to handel enter key pressed in search
+            dojo.connect(dojo.byId("txtAddress"), 'onkeypress', function (evt) {
+                key = evt.keyCode;
+                if (key == dojo.keys.ENTER) {
+                    locate();
+                }
+            });
+
+            esri.config.defaults.io.proxyUrl = "proxy.ashx";
+            esriConfig.defaults.io.alwaysUseProxy = false;
+            dojo.xhrGet({
+                url: "Config.txt",
+                handleAs: "json",
+                preventCache: true,
+                load: function (responseObject, ioArgs) {
+                    dojo.query(".dijitDialogCloseIcon", dojo.byId('dialogLoadMessage'))[0].title = 'Close';
+                    dojo.query(".dijitDialogCloseIcon", dojo.byId('dialogAlertMessage'))[0].title = 'Close';
+                    dojo.byId('divLoadMessage').innerHTML = responseObject.SplashScreenMessage;
+                    dijit.byId('dialogLoadMessage').show();
+
+                    var mapExtent = responseObject.DefaultExtent;
+                    var zoomExtent;
+                    var extent = GetQuerystring('extent');
+                    if (extent != "") {
+                        zoomExtent = extent.split(',');
+                    }
+                    else {
+                        zoomExtent = mapExtent.split(',');
+                    }
+
+                    var startExtent = new esri.geometry.Extent(parseFloat(zoomExtent[0]), parseFloat(zoomExtent[1]), parseFloat(zoomExtent[2]), parseFloat(zoomExtent[3]), new esri.SpatialReference({ wkid: 3857 }));
+                    map = new esri.Map("map");
+
+                    hasCustomRenderer = responseObject.CustomRenderer;
+                    rendererColor = responseObject.RendererColor;
+
+                    map.setExtent(startExtent);
+                    locatorURL = responseObject.Locator;
+                    defaultAddress = responseObject.DefaultAddress;
+                    helpFileURL = responseObject.HelpFileURL;
+                    defaultCmnt = responseObject.DefaultCmnt;
+                    devPlanLayerURL = responseObject.DevPlanLayer;
+                    commentLayerURL = responseObject.CommentLayer;
+                    tinyURLServiceURL = responseObject.TinyURLServiceURL;
+                    dojo.byId('imgApp').src = responseObject.ApplicationImage;
+                    dojo.byId('lblAppName').innerHTML = responseObject.ApplicationName;
+
+                    baseMapLayerCollection = responseObject.BaseMapLayers;
+                    CreateBaseMapComponent();
+
+                    dojo.connect(map, "onLoad", MapInitFunction);
+                    dojo.connect(map.infoWindow, "onHide", ClearGraphics);
+                    dojo.byId('txtAddress').value = responseObject.DefaultAddress;
+                    dojo.byId('txtAddress').defaultText = dojo.byId('txtAddress').value;
+                    PositionAddressList();
+
+                    geometryService = new esri.tasks.GeometryService(responseObject.GeometryService);
+
+                    infoWindowTitle = responseObject.InfoWindowTitle;
+                    infoPopupFieldsCollection = responseObject.InfoPopupFieldsCollection;
+
+                    customMouseHandler.addEvent(dojo.byId('divContainer'), 'mouseleave', HideBaseMapWidget, false);
+                    customMouseHandler.addEvent(dojo.byId('divSocialContainer'), 'mouseleave', ToggleApplication, false);
+
+                }
+            });
+
+        }
+
+        //function for getting InternetExplorer Version
+        function getInternetExplorerVersion() {
+            var rv = -1; // Return value assumes failure.
+            if (navigator.appName == 'Microsoft Internet Explorer') {
+                var ua = navigator.userAgent;
+                var re = new RegExp("MSIE ([0-9]{1,}[\.0-9]{0,})");
+                if (re.exec(ua) != null)
+                    rv = parseFloat(RegExp.$1);
+            }
+            return rv;
+        }
+
+        //Event for resizing the map
+        function MapInitFunction(map) {
+            dojo.byId('map_zoom_slider').style.top = '80px';
+            map.infoWindow.domNode.style.zIndex = 200;
+            dojo.query(".dijitDialogCloseIcon", dojo.byId('dialogAlertMessage'))[0].title = 'Close';
+
+            var infoWindow = map.infoWindow;
+            var infoBorder = dojo.query('.border', infoWindow.domNode)[0];
+            infoBorder.className = 'infoWindowBorder';
+
+            var resizeTimer;
+            dojo.connect(dijit.byId('map'), 'resize', function () {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(function () {
+                    map.resize();
+                    map.reposition();
+                }, 500);
+            });
+
+            dojo.byId('divInfoPopup').className = 'hidden';
+
+            var devPlanLayer = new esri.layers.FeatureLayer(devPlanLayerURL, {
+                mode: esri.layers.FeatureLayer.MODE_SNAPSHOT,
+                outFields: ["*"],
+                displayOnPan: false
+            });
+            devPlanLayer.id = devPlanLayerID;
+
+            var todayDate = new Date();
+            var dateFrom = todayDate.getFullYear() + '/' + (todayDate.getMonth() + 1) + '/' + todayDate.getDate();
+            devPlanLayer.setDefinitionExpression("HEARINGDT >= '" + dateFrom + "'");
+
+            if (hasCustomRenderer) {
+                var lineColor = new dojo.Color();
+                lineColor.setColor(rendererColor);
+
+                var fillColor = new dojo.Color();
+                fillColor.setColor(rendererColor);
+                fillColor.a = 0.75;
+
+                var symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID,
+                    new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, lineColor, 3), fillColor);
+
+                devPlanLayer.setRenderer(new esri.renderer.SimpleRenderer(symbol));
+            }
+
+            dojo.connect(devPlanLayer, "onUpdateEnd", function (err) {
+
+                HideLoadingMessage();
+                if (err) {
+                    ShowDialog("Data Error", err.message);
+                    return;
+                }
+                LoadFieldTypes(devPlanLayer.fields);
+            });
+
+
+            dojo.connect(devPlanLayer, "onClick", function (evtArgs) {
+                DisplayInfoWindow(evtArgs.graphic, evtArgs.mapPoint);
+            });
+            dojo.connect(devPlanLayer, "onMouseMove", ShowMapTip);
+            dojo.connect(devPlanLayer, "onMouseOut", function () {
+                closeDialog();
+            });
+
+            dojo.connect(map, "onExtentChange", function (extent) {
+                closeDialog();
+            });
+
+            dojo.connect(map, "onMouseDragEnd", function (evt) {
+                closeDialog();
+            });
+
+
+            var commentLayer = new esri.layers.FeatureLayer(commentLayerURL, {
+                mode: esri.layers.FeatureLayer.MODE_SELECTION,
+                outFields: ["*"]
+            });
+            commentLayer.id = commentLayerID;
+            map.addLayer(commentLayer);
+
+            var gLayer = new esri.layers.GraphicsLayer();
+            gLayer.id = tempGraphicLayer;
+
+            map.addLayer(devPlanLayer);
+            map.addLayer(gLayer);
+        }
+
+        function LoadFieldTypes(fields) {
+            for (var i = 0; i < infoPopupFieldsCollection.length; i++) {
+                for (var j = 0; j < fields.length; j++) {
+                    if (infoPopupFieldsCollection[i].AttributeValue == fields[j].name) {
+                        infoPopupFieldsCollection[i].Type = fields[j].type;
+                    }
+                }
+            }
+        }
+        //Function for displaying InfoPopup on Featurelayer click
+        function DisplayInfoWindow(feature, mapPoint) {
+
+            ClearGraphics();
+            ToggleCommentsView(false);
+            createDetailsDiv(feature);
+
+            devObjectId = feature.attributes[map.getLayer(devPlanLayerID).objectIdField];
+
+            caseId = feature.attributes.CASEID;
+
+            RemoveChildren(document.getElementById("divAttachmentsData"));
+            map.getLayer(devPlanLayerID).queryAttachmentInfos(devObjectId, GetAttachmentInfo, null);
+            RemoveChildren(document.getElementById("divCommentData"));
+            FetchComments();
+            ShowInfoPopUp(feature, mapPoint);
+            CreateScrollbar(dojo.byId('divDetailsScrollContainer'), dojo.byId('divDetailsScrollContent'));
+            
+        }
+
+        function createDetailsDiv(feature) {
+            var detailsDiv = document.getElementById("divDetails");
+            RemoveChildren(detailsDiv);
+            //used settimeout due to remove childrens
+
+            var table = document.createElement("table");
+            var tBody = document.createElement("tbody");
+            var devPlanLayer= map.getLayer(devPlanLayerID);
+            for (var i = 0; i < infoPopupFieldsCollection.length; i++) {
+                var tr = document.createElement("tr");
+                tr.vAlign = "top";
+                var td1 = document.createElement("td");
+                td1.className = "infowindowTd1";
+                var td2 = document.createElement("td");
+                td2.className = "infowindowTd2";
+                if (infoPopupFieldsCollection[i].DisplayText) {
+                    td1.innerHTML = infoPopupFieldsCollection[i].DisplayText + ":";
+                }
+                else {
+                    for (var d = 0; d < devPlanLayer.fields.length;d++) {
+                        if (devPlanLayer.fields[d].name == infoPopupFieldsCollection[i].AttributeValue) {
+                            td1.innerHTML = devPlanLayer.fields[d].alias + ':';
+                            break;
+                        }
+                    }
+                }
+                if (infoPopupFieldsCollection[i].Type == "esriFieldTypeDate") {
+                    var epochDate = Number(feature.attributes[infoPopupFieldsCollection[i].AttributeValue]) + (new Date().getTimezoneOffset() * 60000);
+                    td2.innerHTML = new Date(epochDate).toDateString().substring(4);
+                }
+                else {
+                    td2.innerHTML = feature.attributes[infoPopupFieldsCollection[i].AttributeValue];
+                }
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tBody.appendChild(tr);
+            }
+            table.appendChild(tBody);
+
+            var scrollbar_container = document.createElement('div');
+            scrollbar_container.className = "scrollbar_container";
+            scrollbar_container.id = "divDetailsScrollContainer";
+
+            var content = document.createElement("div");
+            content.className = 'scrollbar_content';
+            content.id = "divDetailsScrollContent";
+
+            content.appendChild(table);
+            scrollbar_container.appendChild(content);
+
+            detailsDiv.appendChild(scrollbar_container);
+        }
+
+        //Function for showing InfoPopup
+        function ShowInfoPopUp(feature, mapPoint) {
+            map.infoWindow.setTitle("<span title='" + feature.attributes[infoWindowTitle] + "' style='color:white; font-size:13px; font-family:Verdana;'>" + feature.attributes[infoWindowTitle].trimString(50) + "</span>");
+            var mainTabContainer = CreateContent();
+            map.infoWindow.setContent(mainTabContainer.domNode);
+            var windowPoint = map.toScreen(mapPoint);
+            map.infoWindow.resize(450, 295);
+            map.infoWindow.show(windowPoint, map.getInfoWindowAnchor(windowPoint));
+            mainTabContainer.resize();
+           }
+
+        document.getElementById
+        dojo.addOnLoad(init);
+
+    </script>
+</head>
+<body class="claro"  onkeydown="if (event.keyCode==dojo.keys.TAB) { if (dijit.byId('dialogLoadMessage').open || dijit.byId('dialogAlertMessage').open) {return event.keyCode!=dojo.keys.TAB;}}">
+    <div id="divMainContainer" dojotype="dijit.layout.BorderContainer" design="headline"
+        gutters="false" style="width: 100%; height: 100%; position: relative">
+        <div id="map" region="center" dojotype="dijit.layout.ContentPane" style="position: relative;
+            overflow: hidden; border: double silver; padding: 0px !important; width: 100%;
+            height: 100%; padding: 0; margin: 0; border: 0;">
+
+        </div>
+    </div>
+    <div class="headerBackground">
+    </div>
+    <div class="headerIcon">
+        <img id="imgApp" style="width: 75px; height: 75px; background-color: transparent;" />
+    </div>
+    <div class="header">
+        <label id="lblAppName" align="left" valign="middle">
+
+        </label>
+    </div>
+    <div class="headerContent" style="vertical-align: middle;" align="right">
+        <table style="height: 100%;">
+            <tr>
+                <td align="right" valign="middle">
+                    <table>
+                        <tr>
+                            <td valign="bottom">
+
+                                <input type="radio" id="findByAddressRadio" checked="checked" onclick="ToggleSearch(this);"
+                                    name="findByRadioGroup" />
+                            </td>
+                            <td align="left" valign="bottom">
+                                <span id="spanAddress" class="text" >Find address: </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td valign="middle">
+
+                                <input type="radio" id="findByCaseNameRadio" onclick="ToggleSearch(this);" name="findByRadioGroup" />
+                            </td>
+                            <td align="left" valign="middle">
+                                <span id="spanCaseName" class="disabledText">Find by case name: </span>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+
+                <td style="width: 270px;" align="left" valign="middle">
+                    <div style="border: 1px solid  #7D7D7D; width: 248px; background-color: Black; height: 21px; ">
+                        <input type="text" id="txtAddress" class="textBox" style="background-color: #242422 !important;
+                            height: 19px;" />
+                        <img id="imgLocateAddress" src="images/locate.png" alt="" onclick="locate()" title="Search"
+                            style="width: 20px; height: 20px; right: 0px; position: absolute; cursor: pointer; top: 19px;" />
+                    </div>
+                </td>
+                <td align="center" style="width: 50px;" valign="middle">
+                    <button dojotype="dijit.form.ToggleButton" id="btnGeolocation" title="Location"
+                        onclick="ShowMyLocation(this);" style="cursor: pointer;">
+                        <img src="images/imgGeolocation.png" width="30px" height="30px" alt="" />
+
+                    </button>
+                </td>
+                <td align="center" style="width: 60px;" valign="middle">
+                    <button dojotype="dijit.form.ToggleButton" id="btnImgBaseMap" title="Switch Basemap" onclick="ShowHideBaseMapComponent();"
+                        style="cursor: pointer;">
+                        <img id="imgBaseMap" src="images/imgBaseMap.png" style="height: 28px; width: 28px;"
+                            alt="" />
+                    </button>
+                    <div id="divBaseMapTitleContainer" style="display: none;">
+                        <div id="divContainer" dojotype="dijit.layout.ContentPane" class="divBaseMapContainer">
+                        </div>
+
+                    </div>
+                </td>
+                <td align="center" style="width: 40px;" valign="middle">
+                    <button dojotype="dijit.form.ToggleButton" id="btnImgApplink" title="Share Map" onclick="ToggleApplication();"
+                        style="cursor: pointer;">
+                        <img src="images/imgSocialMedia.png" width="30px" height="30px" />
+                    </button>
+                    <div id="divAppContainer" style="display: none; top: 48px; width: 130px; right: 60px;
+                        height: auto; position: absolute; z-index: 100;">
+                        <div dojotype="dijit.layout.ContentPane" id="divSocialContainer">
+                            <div id="divAppContent">
+
+                                <table cellpadding="0" cellspacing="0">
+                                    <tr>
+                                        <td>
+                                            <table cellpadding="2" cellspacing="2">
+                                                <tr>
+                                                    <td align="center" colspan="3" style="color: #F5F5DC; font-size: 11px;">
+                                                        Share this map
+                                                    </td>
+                                                </tr>
+
+                                                <tr>
+                                                    <td style="width: 15px;" align="center">
+                                                        <img title="Facebook" class="imgSocialMediaIcon" src="images/img_facebook.png" onclick="ShareLink('facebook');" />
+                                                    </td>
+                                                    <td style="width: 15px;" align="center">
+                                                        <img title="Twitter" class="imgSocialMediaIcon" src="images/img_twitter.png" onclick="ShareLink('twitter');" />
+                                                    </td>
+                                                    <td style="width: 15px;" align="center">
+                                                        <img title="Email" class="imgSocialMediaIcon" src="images/img_email.png" onclick="ShareLink('mail');" />
+
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                </td>
+                <td align="center" style="width: 60px;" valign="middle">
+                    <button dojotype="dijit.form.ToggleButton" id="btnImgHelp" title="Help" onclick="ShowHelp()">
+                        <img id="imgHelp" src="images/Help.png" title="Help" width="30px" height="30px" />
+                    </button>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div id="divAddressContainer" style="display: none; position: absolute; z-index: 100;
+        background-color: transparent; border: 1px solid; width: 250px;">
+    </div>
+    <div id="divInfoPopup">
+        <div id="divTabs">
+            <div id="divDetails">
+            </div>
+            <div id="divAttachments">
+                <div id="divAttachmentsData" >
+                </div>
+
+            </div>
+            <div id="divComments">
+                <div id="divCommentInput">
+                    <div>
+                        <table onclick="ToggleCommentsView(true);" style="cursor: pointer;">
+                            <tr>
+                                <td>
+                                    <img style="border: none" src="images/commentadd.png" width="30" height="30" />
+                                </td>
+
+                                <td>
+                                    <span>Add Comment</span>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                <div id="divCommentData" class='comments_scrollbar_container'>
+
+                </div>
+                <div id="divAddComment" style="display: none;">
+                    <table style="font-family: Verdana; font-size: 11px; margin-left:7px; margin-top:3px; width:200px;" cellpadding="0"
+                        cellspacing="0">
+                        <tr style="height: 35px;">
+                            <td>
+                                Name:
+                            </td>
+                            <td>
+                                <input type="text" dojotype="dijit.form.TextBox" id="txtName" />
+
+                            </td>
+                            <td class="tdwidth" align="right">
+                                Email:
+                            </td>
+                            <td align='right'>
+                                <input dojotype="dijit.form.TextBox" id="txtEmail" type="text" />
+                            </td>
+                        </tr>
+                        <tr style="height: 40px;" >
+
+                            <td class="tdwidth" >
+                                Address:
+                            </td>
+                            <td>
+                                <input dojotype="dijit.form.TextBox" id="txtCmntAddress" type="text" />
+                            </td>
+                            <td class="tdwidth" align="right">
+                                Phone:
+                            </td>
+                            <td align='right'>
+
+                                <input dojotype="dijit.form.TextBox" id="txtPhone" type="text" />
+                            </td>
+                        </tr>
+                         <tr>
+                            <td colspan="2" style="height: 5px;">
+                            </td>
+                        </tr>
+                        <tr style="height: 45px; width:160px;">
+                            <td class="tdwidth" valign="top">
+
+                                Comments:
+                            </td>
+                            <td colspan="3">
+                                <textarea id="txtComments" class='txtArea' ></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="4" style="height:15px;" >
+                            
+                            </td>
+
+                        </tr>
+                        <tr>
+                            <td colspan="4" valign="middle" align="center" >
+                            <span id="commentError" style="display:none; color:Yellow; height: 30px; margin-top:3px; word-wrap: break-word;">
+                            </span>
+                            </td>
+                        </tr>
+
+                        <tr>
+
+                            <td align="center" colspan="4">
+                                <table>
+                                    <tr>
+                                        <td align="right">
+                                            <span class="rounded" onclick="AddComment();">Submit</span>
+                                        </td>
+                                        <td align="left">
+                                            <span class="rounded" onclick="ToggleCommentsView(false);">Cancel</span>
+
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <div id="dialogAlertMessage" dojotype="dijit.Dialog" style="width: 300px; height: 120px;">
+        <table style="width: 100%;">
+            <tr>
+                <td align="center">
+                    <div id="divMessage">
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td>
+                </td>
+            </tr>
+            <tr>
+                <td align="center">
+                    <div class="divOk" id="divOKButton" onclick="CloseDialog();">
+                        OK</div>
+
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div id="divLoadingIndicator">
+        <table style="width: 100%; height: 100%;">
+            <tr>
+                <td align="center">
+                    <table>
+
+                        <tr>
+                            <td align="center">
+                                <img src="images/loading.gif" />
+                            </td>
+                            <td id="loadingMessage">
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+
+            </tr>
+        </table>
+    </div>
+    <div id="dojoStandBy" dojotype="dojox.widget.Standby" color="black">
+    </div>
+    <div id="dialogLoadMessage" dojotype="dijit.Dialog" style="width: 350px;">
+        <table>
+            <tr>
+                <td>
+
+                    <div id="divLoadMessage" style="background: black; color: White;">
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td align="center">
+                    <div class="divOk" onclick="dijit.byId('dialogLoadMessage').hide();">
+                        OK</div>
+
+                </td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

@@ -1,0 +1,653 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=7"/>
+      <!--The viewport meta tag is used to improve the presentation and behavior of the samples
+      on iOS devices-->
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no"/>
+    <title>IEBC: Poll Boundaries Viewer</title>
+    <link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.5/js/dojo/dojox/image/resources/image.css">
+	<link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.0/js/dojo/dijit/themes/tundra/tundra.css">
+<link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.0/js/dojo/dojox/grid/resources/Grid.css">
+<link rel="stylesheet" type="text/css" href="http://serverapi.arcgisonline.com/jsapi/arcgis/2.0/js/dojo/dojox/grid/resources/tundraGrid.css">
+	<link rel="stylesheet" href="appFiles/viewer.css" type="text/css" />
+	<link rel="stylesheet" href="appFiles/dropdown.css" type="text/css" />
+   
+    <style>
+      html, body { height: 100%; width: 100%; margin: 0; padding: 0; }
+      #map{padding:0;}
+      #thumbPickerDiv{
+        border:solid 1px #79663b;
+        -moz-border-radius: 6px;
+        -webkit-border-radius: 6px;
+      }
+    </style>
+
+   
+    <script type="text/javascript">var djConfig = {parseOnLoad: true};</script>
+    <script type="text/javascript" src="http://serverapi.arcgisonline.com/jsapi/arcgis/?v=2.4"></script>
+	<script type="text/javascript" src="appFiles/config.js"></script>
+    <script type="text/javascript" src="appFiles/common.js"></script>
+   
+    <script type="text/javascript">
+      dojo.require("esri.map");
+	  dojo.require("esri.tasks.query");
+      dojo.require("esri.layers.osm");
+	  dojo.require("dijit.form.Button");
+	  dojo.require("dijit.form.Textarea");
+	  dojo.require("dojox.fx");
+      dojo.require("dojo.fx.easing");
+      dojo.require("dijit.TooltipDialog");
+      dojo.require("dijit.form.TextBox");
+      dojo.require("dijit.Dialog");
+      dojo.require("dojox.widget.Standby");
+      dojo.require("dijit.form.RadioButton");
+      dojo.require("dijit.form.ToggleButton");
+      dojo.require("dijit.layout.BorderContainer");
+      dojo.require("dijit.layout.ContentPane");;
+      dojo.require("esri.dijit.BasemapGallery");
+      dojo.require("dojox.image.ThumbnailPicker");
+      dojo.require("dojo.data.ItemFileReadStore");
+      dojo.require("esri.tasks.find");
+	  dojo.require("dojox.grid.DataGrid");
+      dojo.require("esri.layers.FeatureLayer");
+      dojo.require("dojox.charting.widget.Chart2D");
+      dojo.require('dojox.charting.themes.CubanShirts');
+      dojo.require("dojo.number");
+      dojo.require("dijit.layout.TabContainer");
+
+
+	  var map, timer;
+	  var query, queryTask;
+	  var mapTheme;
+	  var highlightedGraphics;
+	  var highlightedGraphic=0
+	  var findGraphics;
+	  var foundGraphic=0;
+	  var panelToggled=0;
+	  var findTask, findParams, findParams2, findParams3;
+      var grid, store;
+      var map;
+	  var customExtentAndSR;
+	  
+	  
+	  var findLayer;
+	  var findLayerID;
+	  var queryURL, fielded;
+	  
+	  var eventListener, eventListenerType;
+	  
+	  setConfigProperties();
+     
+      function init() {
+	  
+		dojo.connect(window, "onresize", function () {
+                if (map) {
+                    map.resize();
+                    map.reposition();
+                }
+            });
+	  
+		ShowLoadingMessage('Loading...');
+		dojo.query(".dijitDialogCloseIcon", dojo.byId('dialogLoadMessage'))[0].title = 'Close';
+		dojo.query(".dijitDialogCloseIcon", dojo.byId('dialogAlertMessage'))[0].title = 'Close';
+		dojo.byId('divLoadMessage').innerHTML = "Welcome to the IEBC Preliminary Poll Boundaries Report <br/><br/> This is an interactive map for the Kenyan citizens; stakeholders in both the country and the Diaspora to view the new boundaries and actively participate in provide feedback.";
+		dijit.byId('dialogLoadMessage').show();
+		var initExtent = new esri.geometry.Extent({"xmin":3774872.3832,"ymin":-521229.627799999,"xmax":4664900.0361,"ymax":603594.547600001,"spatialReference":{"wkid":102100}});
+        map = new esri.Map("map",{extent:initExtent});
+        //Add the world imagery to the map. View the ArcGIS Online site for services http://arcgisonline/home/search.html?t=content&f=typekeywords:service    
+        var basemap = new esri.layers.ArcGISTiledMapServiceLayer("http://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer");
+        map.addLayer(basemap);  
+		//createBasemapGallery();
+		
+		var backgmap = new esri.layers.ArcGISDynamicMapServiceLayer("http://10.20.1.55/ArcGIS/rest/services/Boundaries/Boundaries/MapServer");
+        map.addLayer(backgmap); 
+		
+        var template = new esri.InfoTemplate();
+        //flag icons are from http://twitter.com/thefella, released under creative commons
+        template.setTitle("${const_nam}");
+        template.setContent(getWindowContent);
+       
+        var statesLayer= new esri.layers.FeatureLayer("http://10.20.1.55/ArcGIS/rest/services/Boundaries/Boundaries/MapServer/0",{
+          mode:esri.layers.FeatureLayer.MODE_ONDEMAND,
+          infoTemplate:template,
+          outFields:["*"]
+        });
+        var symbol = new esri.symbol.SimpleFillSymbol();
+        statesLayer.setRenderer(new esri.renderer.SimpleRenderer(symbol));
+       
+        map.addLayer(statesLayer);
+        map.infoWindow.resize(400,275);
+        //resize the map when the browser resizes - view the 'Resizing and repositioning the map' section in
+        //the following help topic for more details http://help.esri.com/EN/webapi/javascript/arcgis/help/jshelp_start.htm#jshelp/inside_guidelines.htm
+        var resizeTimer;
+		
+		//Find Task
+        findTask = findLayer;
+        findParams2 = new esri.tasks.FindParameters();
+		findParams3 = new esri.tasks.FindParameters();
+        findParams2.returnGeometry = true;
+		findParams3.returnGeometry = true;
+        findParams2.layerIds = [findLayerID];
+		findParams3.layerIds = [findLayerID];
+        findParams2.searchFields = ["objectid","const_nam"];
+		findParams3.searchFields = ["objectid","county_nam"];
+		
+		dojo.connect(grid, "onRowClick", onRowClickHandler);
+		
+		createBasemapGallery();
+		HideLoadingMessage();
+        dojo.connect(map, 'onLoad', function(theMap) {
+          dojo.connect(dijit.byId('map'), 'resize', function() {  //resize the map if the div is resized
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout( function() {
+              map.resize();
+              map.reposition();
+            }, 500);
+			
+          });
+		
+		//dijit.byId("Details").setContent("hi");
+        //dijit.byId("Comments").setContent("hi")
+		map.infoWindow.setContent(dijit.byId("tabs").domNode);
+		
+        });
+		
+		
+		
+		//dojo.connect(map.infoWindow, "onShow", function() {
+         // dijit.byId("tabs").resize();
+        //});
+		
+      }
+	  
+	  
+	  function showParcel(results) { 
+        //symbology for graphics 
+        var polygonSymbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_DASHDOT, new dojo.Color([255, 0, 0]), 2), new dojo.Color([255, 0, 0, 0.5])); 
+       
+        //find results return an array of graphics in the graphicslayer.
+        var graphicslayer = new esri.layers.GraphicsLayer();        
+        map.graphics.clear(); 
+        //Build an array of attribute information and add each found graphic to the map 
+        dojo.forEach(results, function(result) { 
+          var graphic = new esri.Graphic(result.feature); 
+          graphic.setSymbol(polygonSymbol); 
+          map.graphics.add(graphic);  
+          graphicslayer.add(graphic);                          
+        });
+
+        //create an extent matching the graphics of the parcel(s)
+        var parcelExtent = esri.graphicsExtent(graphicslayer.graphics);      
+        map.setExtent(parcelExtent);          
+      }
+
+	  
+	  function findResults(results) {
+		if (results.length < 1)
+		{
+			map.setExtent(customExtentAndSR);
+			alert("Sorry! No results were found for " + fielded + " with the value '" + dojo.byId("findField").value + "'") ;
+			clearFind();
+			basicStandby1.hide();
+			//document.getElementById('findTable').style.visibility='hidden';
+			//panelToggled=0;
+		}
+		//This function works with an array of FindResult that the task returns
+		var symbol = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,204,51]), 3), new dojo.Color([98,194,204,0]));
+		highlightedGraphics = new esri.layers.GraphicsLayer();
+		map.addLayer(highlightedGraphics);
+		
+		//Create items array to be added to store's data
+		var items = []; //all items to be stored in data store
+        for (var i=0, il=results.length; i<il; i++) {
+			items.push(results[i].feature.attributes);  //append each attribute list as item in store
+			var graphic = results[i].feature;
+			graphic.setSymbol(symbol);
+			highlightedGraphics.add(graphic);
+		}
+		highlightedGraphic=1;
+
+        //Create data object to be used in store
+        var data = {
+			identifier: "objectid",  //This field needs to have unique values
+			label: "objectid", //Name field for display. Not pertinent to a grid but may be used elsewhere.
+			items: items
+        };
+		
+		if (results.length==1) {
+			featureQuery(results[0].feature.attributes.objectid);
+			if (panelToggled==1) {
+				toggleFindBox();
+			}
+		}
+		else {
+			if (panelToggled==0) {
+				toggleFindBox();
+			}
+			
+			
+				//Zoom to extent of array of features
+				var parcelExtent = esri.graphicsExtent(highlightedGraphics.graphics);      
+				map.setExtent(parcelExtent);
+			}
+
+		//Create data store and bind to grid.
+        store = new dojo.data.ItemFileReadStore({ data:data });
+        grid.setStore(store);
+        //grid.setQuery({ OBJECTID: '*' });
+		
+		basicStandby1.hide();
+		}
+	  
+		//Zoom directly to parcel if find task only has one result
+      function featureQuery(feature){
+		eventListener=feature;
+		eventListenerType=1;
+		var clickedSiteID = feature;
+        var selectedFeature;
+        for (var i=0, il=highlightedGraphics.graphics.length; i<il; i++) {
+			var currentGraphic = highlightedGraphics.graphics[i];
+			if ((currentGraphic.attributes) && currentGraphic.attributes.objectid == clickedSiteID){
+				selectedFeature = currentGraphic;
+				break;
+			}
+        }
+		
+		var siteExtent = selectedFeature.geometry.getExtent();
+		var centerExt = map.toScreen(siteExtent.getCenter());
+        siteExtent.update(siteExtent.xmin-500,
+                          siteExtent.ymin-500,
+                          siteExtent.xmax+500,
+                          siteExtent.ymax+500,
+                          new esri.SpatialReference({wkid:3857}));
+        map.setExtent(siteExtent);
+		
+		setupQuery();
+		//Runs a query on the operational layer with the same NAME field as the selected feature in the table
+        query.where = "const_nam = " + "'" + selectedFeature.attributes['const_nam'] + "'";
+       
+	   
+	    var extentHandler = dojo.connect(map, 'onExtentChange', function() {
+        dojo.disconnect(extentHandler);
+        queryTask.execute(query, function(fset) {
+			console.log(fset.features.length);
+			console.log(query.where);
+            //call show features here 
+            showFeature(fset.features[0], null);            
+        }/*,function(error){
+          alert(error);
+        }*/);
+		})
+      }
+	  
+	  
+	  function getGraphicsExtent(graphics) {
+  var geometry, extent, ext;
+  dojo.forEach(graphics, function(graphic, i) {
+    geometry = graphic.geometry;
+
+    if (geometry instanceof esri.geometry.Point) {
+      ext = new esri.geometry.Extent(geometry.x - 1, geometry.y - 1, geometry.x + 1, geometry.y + 1, geometry.spatialReference);
+    }
+    else if (geometry instanceof esri.geometry.Extent) {
+      ext = geometry;
+    }
+    else {
+      ext = geometry.getExtent();
+    }
+
+    if (extent) {
+      extent = extent.union(ext);
+    }
+    else {
+      extent = new esri.geometry.Extent(ext);
+    }
+  });
+  return extent;
+}
+
+	  
+		//Zoom to the parcel when the user clicks a row
+      function onRowClickHandler(evt){
+		eventListener=evt;
+		eventListenerType=2;
+		var clickedSiteID = grid.getItem(evt.rowIndex).objectid;
+        var selectedRow;
+        for (var i=0, il=highlightedGraphics.graphics.length; i<il; i++) {
+			var currentGraphic = highlightedGraphics.graphics[i];
+			if ((currentGraphic.attributes) && currentGraphic.attributes.objectid == clickedSiteID){
+				selectedRow = currentGraphic;
+				break;
+			}
+        }
+		
+        var siteExtent = selectedRow.geometry.getExtent();
+		var centerExt = map.toScreen(siteExtent.getCenter());
+        siteExtent.update(siteExtent.xmin-500,
+                          siteExtent.ymin-500,
+                          siteExtent.xmax+500,
+                          siteExtent.ymax+500,
+                          new esri.SpatialReference({wkid:3857}));
+        map.setExtent(siteExtent);
+		
+		
+		setupQuery();
+		//Runs a query on the operational layer with the same NAME field as the selected feature in the table
+        query.where = "const_nam = " + "'" + selectedRow.attributes['const_nam'] + "'";
+       
+	    var extentHandler = dojo.connect(map, 'onExtentChange', function() {
+        dojo.disconnect(extentHandler);
+
+        queryTask.execute(query, function(fset) {
+			console.log(fset.features.length);
+            //call show features here 
+            showFeature(fset.features[0], null);  
+        }/*,function(error){
+          alert(error);
+        }*/
+		)
+		})
+      }
+	  
+	  
+	  
+	  
+	  function createBasemapGallery(){
+        basemapGallery = new esri.dijit.BasemapGallery({
+          showArcGISBasemaps: true,
+          map: map
+        });
+        
+
+        dojo.connect(basemapGallery,"onLoad",function(){
+          //first get a list of the basemaps to set to a dojo store
+          var items= dojo.map(basemapGallery.basemaps,function(basemap){
+            return {thumbnailUrl:basemap.thumbnailUrl, id:basemap.id, title:basemap.title};
+          });
+        
+          var data = {
+            identifier:"id",
+            items:items
+           };
+          var itemRequest = {
+            query: {},
+            start:0,
+            count: 4
+          };
+          var itemNameMap = {
+           imageThumbAttr: "thumbnailUrl",
+           titleAttr : "title"
+          };
+          var store = new dojo.data.ItemFileReadStore({data:data});
+          
+          //Populate the dojo thumbnail picker with the basemaps 
+          var thumbPicker = dijit.byId('thumbPickerDiv');
+          thumbPicker.setDataStore(store,itemRequest,itemNameMap);
+          dojo.subscribe(thumbPicker.getClickTopicName(),function(info){
+            //when you click a thumbnail in the gallery - switch the basemap to the selected item.
+             basemapGallery.select(info.data.id);
+          });
+        });
+		}
+	  
+	function setupQuery() {
+		queryTask = new esri.tasks.QueryTask(queryLayer1);
+		query = new esri.tasks.Query();
+		query.returnGeometry = true;
+		query.outFields = ["*"];//["OBJECTID", "SLID", "SLNAME", "LOCNAME", "DIVNAME", "DISTNAME", "PROVNAME", "CONSTITUEN", "COUNTED", "SUM_HOUSEH", "SUM_MALES", "SUM_FEMALE", "SUM_GRTOTA", "County", "Sub_Location", "Male", "Female", "Total", "Households", "Sex_Ratio", "Male_Head", "Female_Head", "TotalHeaded", "Male_under_5_years", "Female_under_5_years", "Total_under_5_years", "Male_Youth", "Female_Youth", "Total_Youth", "Male_elderly", "Female_elderly", "Total_elderly", "Catholic", "Protestant", "Other_Christs", "Muslims", "Traditionalist", "No_religion", "Total_religion","Never_Married","Monogamous","Polygamous","Widowed","Divorced","Separated","FromNairobi","FromCentral","FromCoast","FromEastern","From_North_Eastern","From_Nyanza","From_Rift_Valley","From_Western","Other_Place","Father_passed_0_to_17","Mother_passed_0_to_17","Both_Parents_passed_0_to_17","At_School","Left_School","Never","Under_five","Std1_incomp","Std1","Std2","Std3","Std4","Std5","Std6","Std7","Std8","Form1","Form2","Form3","Form4","Form5","Form6","incomp_attend","Complet_above","Born_under_5","Dead_under_5","Mortality_Rate","Women_12_49","Children_Everborn","Fertility_Rate","Purchased","Constructed","Inherited","Government","Authority","Parastatal","Company","Individual","iron_sheet_roof",];
+	
+	}
+	
+	
+	function showFeature(feature,evt) {
+	var attr = feature.attributes;
+	
+	if (attr!=null) {
+	  var symbol1 = new esri.symbol.SimpleLineSymbol(new dojo.Color([0,0,0]), new dojo.Color([0,0,0,0.0]));
+	  var symbol2 = new esri.symbol.SimpleFillSymbol(esri.symbol.SimpleFillSymbol.STYLE_SOLID, new esri.symbol.SimpleLineSymbol(esri.symbol.SimpleLineSymbol.STYLE_SOLID, new dojo.Color([255,204,0]), 2), new dojo.Color([255,204,0,0.2]));
+  
+	  if (evt==null) {
+		  feature.setSymbol(symbol1);
+		  map.graphics.add(feature);
+	  } else {
+		  feature.setSymbol(symbol2);
+		  map.graphics.add(feature);
+	  }
+	  	  
+	  if (evt != null) {
+			 //flag icons are from http://twitter.com/thefella, released under creative commons
+			var newtemplate = new esri.InfoTemplate();
+			newtemplate.setTitle("{const_nam}");
+			newtemplate.setContent(getWindowContent);
+		}
+	  else {
+			map.infoWindow.setTitle(attr.const_nam);
+			//make a tab container
+			var tc = new dijit.layout.TabContainer({
+			 style:"width:100%;height:100%;"
+			}, dojo.create("div"));
+				   //display attribute information
+			var cp1 = new dijit.layout.ContentPane({
+			  title: "Details",
+			  content: "Name of Constituency: " + attr.const_nam + "<br/>County: " + attr.county_nam +
+			  "<br />Poulation(2009): " + attr.censuspopu + "<br />Area(square km): " + attr.square_km
+			});
+			tc.addChild(cp1);
+		   
+		   //display a dojo pie chart for the male/female percentage
+			var cp2 = new dijit.layout.ContentPane({
+			  title: "Comments",
+			  style:'width:200px;height:300px;',
+			  content: "Do you have a query on what you have seen on this map viewer?<br/> Feel free to send us your concerns by clicking on the link below to send us a message:<br/><br/><a href='mailto:	memoranda@iebc.or.ke?subject="+ attr.const_nam + "&cc=lndungo@gmail.com'>Send mail to IEBC</a>"
+			});
+	 
+			tc.addChild(cp2);
+			
+						
+			map.infoWindow.setContent(tc.domNode);
+			
+			//dijit.byId("DetailsTab").setContent(detailContent);
+			//dijit.byId("ReligiousTab").setContent(ratioContent);
+			
+			var featureExtent = feature.geometry.getExtent();
+			var centerExt = map.toScreen(featureExtent.getCenter());
+			map.infoWindow.show(centerExt,map.getInfoWindowAnchor(centerExt));  
+		  }
+		  
+		  
+	}
+}
+	  
+     function getWindowContent(graphic) {
+        //make a tab container
+        var tc = new dijit.layout.TabContainer({
+         style:"width:100%;height:100%;"
+        }, dojo.create("div"));
+               //display attribute information
+        var cp1 = new dijit.layout.ContentPane({
+          title: "Details",
+          content: "Constituency: " + graphic.attributes.const_nam + "<br/><br />County: " + graphic.attributes.county_nam +
+			  "<br />Census Population: " + graphic.attributes.censuspopu + "<br />Area(square km): " + graphic.attributes.square_km
+        });
+        tc.addChild(cp1);
+       
+       //display a dojo pie chart for the male/female percentage
+        var cp2 = new dijit.layout.ContentPane({
+          title: "Make Comments",
+          style:'width:200px;height:300px;',
+		  content: "Do you have a query on what you have seen on this map viewer?<br/> Feel free to send us your concerns by clicking on the link below to send us a message:<br/><br/><a href='mailto:	memoranda@iebc.or.ke?subject="+ graphic.attributes.const_nam + "&cc=lndungo@gmail.com'>Send mail to IEBC</a>"
+        });
+ 
+        tc.addChild(cp2);
+				
+		
+		return tc.domNode;
+      }
+	  
+	  //Function for displaying Standby text
+	function ShowLoadingMessage(loadingMessage) {
+		dojo.byId('divLoadingIndicator').style.display = 'block';
+		dojo.byId('loadingMessage').innerHTML = loadingMessage;
+	}
+
+	//Function for hiding Standby text
+	function HideLoadingMessage() {
+		dojo.byId('divLoadingIndicator').style.display = 'none';
+}
+
+	//Function for displaying loading image in comments tab
+	function ShowDojoLoading(target) {
+		dijit.byId('dojoStandBy').target = target;
+		dijit.byId('dojoStandBy').show();
+	}
+
+	//Function for hiding loading image
+	function HideDojoLoading() {
+		dijit.byId('dojoStandBy').hide();
+	}
+
+    function ShowHelp() {
+    window.open("help.html", "helpwindow");
+	}
+ 
+	  
+	  
+	 dojo.addOnLoad(init);
+    </script>
+  </head>
+ 
+  <body class="claro" onkeydown="if (event.keyCode==dojo.keys.TAB) { if (dijit.byId('dialogLoadMessage').open || dijit.byId('dialogAlertMessage').open) {return event.keyCode!=dojo.keys.TAB;}}">
+    <div id="mainWindow" dojotype="dijit.layout.BorderContainer" design="headline" gutters="false" style="width: 100%; height: 100%; margin: 0;">
+		<div id="header" dojotype="dijit.layout.ContentPane" region=
+	"top" style="height:85px;;margin-bottom:3px; padding-bottom:7px;">
+	<div id="title">IEBC Preliminary Map Viewer</div>     
+	</div>
+	
+	
+    <div id="map" dojotype="dijit.layout.ContentPane" region="center" style="overflow:hidden;">
+		<div style="position:absolute; right:25px; top:50px; z-Index:99;">
+           <div id="thumbPickerDiv" dojoType="dojox.image.ThumbnailPicker" size="400" isClickable="true" isHorizontal="false" ></div> 
+      </div>
+	 
+    </div>
+	
+	
+	
+	
+	</div>
+	<div data-dojo-id="basicStandby1" data-dojo-type="dojox.widget.Standby" data-dojo-props="target:'map', color:'lightgray', text:'Please wait,loading data ..,'"></div>
+	<div id="tabs" dojoType="dijit.layout.TabContainer" style="width:285px;height:150px;">
+      <div id="Details" dojoType="dijit.layout.ContentPane" title="Details"></div>
+      <div id="Comments" dojoType="dijit.layout.ContentPane" title="Make Comments"></div>
+    </div>           
+    
+	<!--configuration for find grid -->
+	<div id="findTable" style="position:absolute; top:88px; right:1px; width:440px; height:200px;  border-style:solid; border-width:thin; border-color:#cae4f1; z-index:999999; visibility:hidden">
+		<table dojoType="dojox.grid.DataGrid" jsid="grid" id="grid" style="height:200px; width:100%;">
+		<thead>
+			<tr>
+				<th field="const_nam" width="125px">Constituency</th>
+				<th field="county_nam" width="125px">Counties</th>
+				<th field="censuspopu" width="125px">Population</th>
+				<th field="objectid" width="80px" visible="false">OBJECTID</th>
+            </tr>
+		</thead>
+		</table>
+	</div>
+
+	<div id="findBoxToggle" style="position:absolute; color:#CCC; font-family:Arial, Helvetica, sans-serif; top:68px; right:22px; z-index:99999">
+	<a href="#" onclick='ShowHelp();'>Help</a>  |  <a href="#" onclick='toggleFindBox();'>Show/Hide Search Results</a>  |  <a href="#" onclick='clearFind();'>Clear Search Results</a>
+	</div>
+
+	
+	
+	<div style="position:absolute; top:10px; right:425px; font-size:larger; font-weight:bold; color:#FFFFFF; z-index:99999">Search:</div>
+    <select id="droplist" style="position:absolute; color:#CCC; font-family:Arial, Helvetica, sans-serif; top:10px; height:23px; right:255px; z-index:99999">
+		<option selected="selected" value="nope">Select an area of interest</option>
+		<option value="Ward">Ward</option>
+		<option value="Constituency">Constituency</option>
+		<option value="County">County</option>
+	</select>
+	<div id="findBox" style="position:absolute; right:3px; top:30px; height:62px; width:420px; border-width:thin; z-index:9999">
+	
+	<!--search div -->
+	
+	<div id="inputBG">
+		<input id="findField" type="text" autocomplete="on" value="type in the name of the area" onfocus="watermark('findField','type in the name of the area');" onblur="watermark('findField','type in the name of the area');"/>
+	</div>
+	
+	<div class = "buttons"><a href="#" id="searchButton" class="searchButton" onClick="javascript:findVariable()" style="color:#036;">Go!</a></div>
+	</div>
+	
+    <!--splash screen -->
+    <div id="dialogAlertMessage" dojotype="dijit.Dialog" style="width: 300px; height: 120px;">
+        <table style="width: 100%;">
+            <tr>
+                <td align="center">
+                    <div id="divMessage">
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td>
+                </td>
+            </tr>
+            <tr>
+                <td align="center">
+                    <div class="divOk" id="divOKButton" onclick="CloseDialog();">
+                        OK</div>
+
+                </td>
+            </tr>
+        </table>
+    </div>
+    <div id="divLoadingIndicator">
+        <table style="width: 100%; height: 100%;">
+            <tr>
+                <td align="center">
+                    <table>
+
+                        <tr>
+                            <td align="center">
+                                <img src="images/loading.gif" />
+                            </td>
+                            <td id="loadingMessage">
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+
+            </tr>
+        </table>
+    </div>
+    <div id="dojoStandBy" dojotype="dojox.widget.Standby" color="black">
+    </div>
+    <div id="dialogLoadMessage" dojotype="dijit.Dialog" style="width: 350px;height: 200px">
+        <table>
+            <tr>
+                <td>
+
+                    <div id="divLoadMessage" style="background: grey; color: White;">
+						
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td align="center">
+                    <div class="divOk" onclick="dijit.byId('dialogLoadMessage').hide();">
+                        OK</div>
+
+                </td>
+            </tr>
+        </table>
+    </div>  
+	
+	
+  </body>
+
+</html>
+
